@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flappy Hakla</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+    }
+    canvas {
+      display: block;
+      margin: auto;
+      background: #70c5ce;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    }
+    #score {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 28px;
+      color: white;
+      text-shadow: 2px 2px 5px rgba(0,0,0,0.4);
+    }
+  </style>
+</head>
+<body>
+  <div id="score">Score: 0</div>
+  <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Load Images
+    const bg = new Image(); bg.src = "bg.png";
+    const birdImg = new Image(); birdImg.src = "hakla.png";
+    const pipeImg = new Image(); pipeImg.src = "pole.png";
+    const gameOverImg = new Image(); gameOverImg.src = "gameover.png";
+
+    // Load Sounds
+    const bgMusic = new Audio("Hakla.mp3");
+    bgMusic.loop = true;
+    const gameOverSound = new Audio("bgm.mp3");
+
+    let frames = 0;
+    const GRAVITY = 0.25;
+    const JUMP = 4.6;
+    let score = 0;
+
+    // Bird
+    const bird = {
+      x: 60, y: 150, w: 40, h: 30, speed: 0,
+      jump() { this.speed = -JUMP; },
+      update() {
+        this.speed += GRAVITY;
+        this.y += this.speed;
+        if (this.y + this.h >= canvas.height - 80) {
+          gameState.current = gameState.over;
+        }
+        if (this.y < 0) { this.y = 0; this.speed = 0; }
+      },
+      draw() { ctx.drawImage(birdImg, this.x, this.y, this.w, this.h); }
+    };
+
+    // Pipes (updated sizes you requested)
+    const pipes = {
+      position: [],
+      gap: 160,
+      width: 60,
+      height: 290,
+      dx: 2,
+      draw() {
+        for (let i = 0; i < this.position.length; i++) {
+          let p = this.position[i];
+          let topYPos = p.y;
+          let bottomYPos = p.y + this.height + this.gap;
+          ctx.drawImage(pipeImg, p.x, topYPos, this.width, this.height);
+          ctx.drawImage(pipeImg, p.x, bottomYPos, this.width, this.height);
+        }
+      },
+      update() {
+        if (frames % 90 === 0) {
+          this.position.push({ x: canvas.width, y: Math.floor(Math.random() * -200) });
+        }
+        for (let i = 0; i < this.position.length; i++) {
+          let p = this.position[i];
+          p.x -= this.dx;
+
+          // Collision
+          if (bird.x + bird.w > p.x && bird.x < p.x + this.width &&
+             (bird.y < p.y + this.height || bird.y + bird.h > p.y + this.height + this.gap)) {
+            gameState.current = gameState.over;
+          }
+
+          // Score update (use < to increase reliability instead of ===)
+          if (!p.scored && p.x + this.width < bird.x) {
+            p.scored = true;
+            score++;
+            document.getElementById("score").innerText = "Score: " + score;
+          }
+
+          // Remove old pipes
+          if (p.x + this.width < 0) {
+            this.position.shift();
+            i--;
+          }
+        }
+      },
+      reset() { this.position = []; }
+    };
+
+    // Game States
+    const gameState = { current: 0, getReady: 0, game: 1, over: 2 };
+
+    // Track previous state to detect transitions
+    let prevGameState = gameState.getReady;
+
+    // Controls
+    document.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        if (gameState.current === gameState.getReady) {
+          gameState.current = gameState.game;
+          // user initiated action — play bg music (browser may require user gesture)
+          try { bgMusic.currentTime = 0; bgMusic.play(); } catch(e){ /* ignore autoplay block */ }
+        } else if (gameState.current === gameState.game) {
+          bird.jump();
+        } else if (gameState.current === gameState.over) {
+          resetGame();
+        }
+      }
+    });
+
+    function resetGame() {
+      bird.y = 150;
+      bird.speed = 0;
+      pipes.reset();
+      score = 0;
+      document.getElementById("score").innerText = "Score: 0";
+      gameState.current = gameState.getReady;
+      bgMusic.currentTime = 0;
+      bgMusic.pause();
+      // Reset prevGameState so next transition into 'over' will be detected
+      prevGameState = gameState.getReady;
+      // Ensure game over sound can play fresh next time
+      gameOverSound.currentTime = 0;
+    }
+
+    function drawGround() {
+      ctx.fillStyle = "#ded895";
+      ctx.fillRect(0, canvas.height - 80, canvas.width, 80);
+    }
+
+    function draw() {
+      ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+      pipes.draw();
+      drawGround();
+      bird.draw();
+
+      if (gameState.current === gameState.over) {
+        ctx.drawImage(gameOverImg, canvas.width/2 - 150, canvas.height/2 - 100, 300, 200);
+      }
+    }
+
+    function update() {
+      // Update gameplay objects when playing
+      if (gameState.current === gameState.game) {
+        bird.update();
+        pipes.update();
+      }
+
+      // If we just entered the 'over' state (transition), play game-over sound and stop bg music
+      if (gameState.current === gameState.over && prevGameState !== gameState.over) {
+        // stop bg music
+        try { bgMusic.pause(); bgMusic.currentTime = 0; } catch(e){}
+        // restart gameOverSound from beginning and play
+        try { gameOverSound.currentTime = 0; gameOverSound.play(); } catch(e){}
+      }
+
+      // Save previous state for next frame
+      prevGameState = gameState.current;
+    }
+
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      draw();
+      update();
+      frames++;
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
